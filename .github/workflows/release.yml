@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, format: v1.0.0. Leave empty for auto semantic versioning"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -27,6 +33,7 @@ jobs:
 
       - name: Calculate semantic version
         id: semver
+        if: github.event_name == 'push'
         uses: ietf-tools/semver-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -35,8 +42,21 @@ jobs:
           noVersionBumpBehavior: silent
           skipInvalidTags: true
 
+      - name: Set version for manual dispatch
+        id: manual_version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "No version specified for manual dispatch"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Check if release is needed
         id: check
+        if: github.event_name == 'push'
         run: |
           if [ -z "${{ steps.semver.outputs.next }}" ]; then
             echo "No conventional commits found - skipping release"
@@ -46,25 +66,36 @@ jobs:
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Determine release version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ steps.manual_version.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "skip=${{ steps.manual_version.outputs.skip }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ steps.semver.outputs.next }}" >> $GITHUB_OUTPUT
+            echo "skip=${{ steps.check.outputs.skip }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Go
-        if: steps.check.outputs.skip == 'false'
+        if: steps.version.outputs.skip == 'false'
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Build cross-platform binaries
-        if: steps.check.outputs.skip == 'false'
+        if: steps.version.outputs.skip == 'false'
         run: ./scripts/build.sh
         env:
-          VERSION: ${{ steps.semver.outputs.next }}
+          VERSION: ${{ steps.version.outputs.version }}
 
       - name: Create Release
-        if: steps.check.outputs.skip == 'false'
+        if: steps.version.outputs.skip == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.semver.outputs.next }}
-          name: Release ${{ steps.semver.outputs.next }}
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
