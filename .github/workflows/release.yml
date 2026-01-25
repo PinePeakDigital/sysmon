@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --prune --tags
+
+      - name: Calculate semantic version
+        id: semver
+        uses: ietf-tools/semver-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+          fallbackTag: "0.0.0"
+          noVersionBumpBehavior: silent
+          skipInvalidTags: true
+
+      - name: Check if release is needed
+        id: check
+        run: |
+          if [ -z "${{ steps.semver.outputs.next }}" ]; then
+            echo "No conventional commits found - skipping release"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version to release: ${{ steps.semver.outputs.next }}"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Go
+        if: steps.check.outputs.skip == 'false'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build cross-platform binaries
+        if: steps.check.outputs.skip == 'false'
+        run: ./scripts/build.sh
+        env:
+          VERSION: ${{ steps.semver.outputs.next }}
+
+      - name: Create Release
+        if: steps.check.outputs.skip == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.semver.outputs.next }}
+          name: Release ${{ steps.semver.outputs.next }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            sysmon-linux-amd64
+            sysmon-linux-arm64
+            sysmon-darwin-amd64
+            sysmon-darwin-arm64
+            sysmon-windows-amd64.exe
+            sysmon-windows-arm64.exe
+            README.md
+            LICENSE
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
