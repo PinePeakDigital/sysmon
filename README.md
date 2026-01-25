@@ -55,5 +55,3 @@ The TUI displays:
 - Memory and GPU memory percentages
 - Per-core CPU usage (4 cores per line)
 - Top 10 processes by CPU usage (PID, CPU%, MEM%, COMMAND)
-
-See `EXAMPLE_OUTPUT.md` for an example of the output format.
