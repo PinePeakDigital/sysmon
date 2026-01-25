@@ -35,7 +35,7 @@ type ProcessInfo struct {
 func main() {
 	app := tview.NewApplication()
 	textView := tview.NewTextView().
-		SetDynamicColors(false).
+		SetDynamicColors(true).
 		SetWrap(false)
 
 	textView.SetChangedFunc(func() {
@@ -192,26 +192,46 @@ func getTopProcesses() []ProcessInfo {
 	return procInfos
 }
 
+// getColorForPercent returns a color tag based on percentage thresholds
+func getColorForPercent(percent float64) string {
+	if percent < 50.0 {
+		return "[green]"
+	} else if percent < 80.0 {
+		return "[yellow]"
+	} else {
+		return "[red]"
+	}
+}
+
 func formatOutput(stats SystemStats) string {
 	var output string
 
-	// Header line - match exact format from example
-	output += fmt.Sprintf("CPU Usage:    %5.1f%%    GPU Usage:    %3.0f%%\n", stats.CPUUsage, stats.GPUUsage)
-	output += fmt.Sprintf("Memory:       %5.1f%%    GPU Memory:   %4.1f%%\n", stats.MemoryUsage, stats.GPUMemory)
+	// Header line - match exact format from example with color coding
+	cpuColor := getColorForPercent(stats.CPUUsage)
+	gpuColor := getColorForPercent(stats.GPUUsage)
+	memColor := getColorForPercent(stats.MemoryUsage)
+	gpuMemColor := getColorForPercent(stats.GPUMemory)
+
+	output += fmt.Sprintf("CPU Usage:    %s%5.1f%%[-]    GPU Usage:    %s%3.0f%%[-]\n",
+		cpuColor, stats.CPUUsage, gpuColor, stats.GPUUsage)
+	output += fmt.Sprintf("Memory:       %s%5.1f%%[-]    GPU Memory:   %s%4.1f%%[-]\n",
+		memColor, stats.MemoryUsage, gpuMemColor, stats.GPUMemory)
 	output += "───────────────────────────────────────────────────────────────────\n"
 
-	// CPU cores - format exactly as in example (4 cores per line)
+	// CPU cores - format exactly as in example (4 cores per line) with color coding
 	coreCount := len(stats.CPUCores)
 	for i := 0; i < coreCount; i += 4 {
 		line := ""
 		for j := 0; j < 4 && i+j < coreCount; j++ {
 			coreNum := i + j
+			corePercent := stats.CPUCores[coreNum]
+			coreColor := getColorForPercent(corePercent)
 			if j < 2 {
-				line += fmt.Sprintf("CPU%02d: %4.1f%%  ", coreNum, stats.CPUCores[coreNum])
+				line += fmt.Sprintf("CPU%02d: %s%4.1f%%[-]  ", coreNum, coreColor, corePercent)
 			} else if j == 2 {
-				line += fmt.Sprintf("CPU%02d: %4.1f%%   ", coreNum, stats.CPUCores[coreNum])
+				line += fmt.Sprintf("CPU%02d: %s%4.1f%%[-]   ", coreNum, coreColor, corePercent)
 			} else {
-				line += fmt.Sprintf("CPU%02d: %4.1f%%", coreNum, stats.CPUCores[coreNum])
+				line += fmt.Sprintf("CPU%02d: %s%4.1f%%[-]", coreNum, coreColor, corePercent)
 			}
 		}
 		output += line + "\n"
@@ -221,9 +241,12 @@ func formatOutput(stats SystemStats) string {
 	// Process list header
 	output += fmt.Sprintf("%-10s %5s  %5s  %s\n", "PID", "CPU%", "MEM%", "COMMAND")
 
-	// Process list
+	// Process list with color coding
 	for _, proc := range stats.Processes {
-		output += fmt.Sprintf("%-10d %5.1f  %5.1f  %s\n", proc.PID, proc.CPU, proc.Memory, proc.Command)
+		cpuColor := getColorForPercent(proc.CPU)
+		memColor := getColorForPercent(float64(proc.Memory))
+		output += fmt.Sprintf("%-10d %s%5.1f[-]  %s%5.1f[-]  %s\n",
+			proc.PID, cpuColor, proc.CPU, memColor, proc.Memory, proc.Command)
 	}
 
 	return output
