@@ -18,6 +18,22 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 
 ## Installation
 
+### Using bin (Recommended)
+
+[bin](https://github.com/marcosnils/bin) is a lightweight binary manager that makes installing and updating sysmon easy:
+
+```bash
+# Install bin if you don't have it
+curl -sSfL https://raw.githubusercontent.com/marcosnils/bin/master/install.sh | sh
+
+# Install sysmon using bin
+bin install github.com/PinePeakDigital/sysmon
+```
+
+After installation, `sysmon` will be available in your `PATH` (typically `~/.local/bin/` on Linux/macOS).
+
+### From Source
+
 ```bash
 go mod tidy
 go build -o sysmon
