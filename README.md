@@ -19,7 +19,7 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 ## Installation
 
 ```bash
-go mod download
+go mod tidy
 go build -o sysmon
 ```
 
@@ -34,6 +34,7 @@ Press `q` or `Ctrl+C` to exit.
 ## Output Format
 
 The TUI displays:
+
 - CPU and GPU usage percentages
 - Memory and GPU memory percentages
 - Per-core CPU usage (4 cores per line)
