@@ -212,11 +212,11 @@ func formatOutput(stats SystemStats) string {
 	memColor := getColorForPercent(stats.MemoryUsage)
 	gpuMemColor := getColorForPercent(stats.GPUMemory)
 
-	output += fmt.Sprintf("CPU Usage:    %s%5.1f%%[-]    GPU Usage:    %s%3.0f%%[-]\n",
+	output += fmt.Sprintf("CPU Usage:    %s%5.1f%%[-]    GPU Usage:     %s%3.0f%%[-]\n",
 		cpuColor, stats.CPUUsage, gpuColor, stats.GPUUsage)
 	output += fmt.Sprintf("Memory:       %s%5.1f%%[-]    GPU Memory:   %s%4.1f%%[-]\n",
 		memColor, stats.MemoryUsage, gpuMemColor, stats.GPUMemory)
-	output += "───────────────────────────────────────────────────────────────────\n"
+	output += "\n"
 
 	// CPU cores - format exactly as in example (4 cores per line) with color coding
 	coreCount := len(stats.CPUCores)
@@ -236,7 +236,7 @@ func formatOutput(stats SystemStats) string {
 		}
 		output += line + "\n"
 	}
-	output += "───────────────────────────────────────────────────────────────────\n"
+	output += "\n"
 
 	// Process list header
 	output += fmt.Sprintf("%-10s %5s  %5s  %s\n", "PID", "CPU%", "MEM%", "COMMAND")
