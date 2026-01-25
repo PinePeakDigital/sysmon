@@ -51,9 +51,9 @@ func main() {
 		return event
 	})
 
-	// Update stats every second
+	// Update stats every 3 seconds
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 
 		for {
