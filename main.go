@@ -116,12 +116,12 @@ func (m model) View() string {
 	}
 
 	// Row 1: CPU Usage | GPU Usage
-	cpuStyle := getColorStyle(m.stats.CPUUsage)
+	cpuStyle := getColorStyle(m.stats.CPUUsage).Underline(true)
 	cpuLabel := "CPU Usage"
 	cpuPercent := fmt.Sprintf("%5.1f%%", m.stats.CPUUsage)
 	cpuBar := createBarWithText(cpuLabel, cpuPercent, m.stats.CPUUsage, barWidth, cpuStyle)
 
-	gpuStyle := getColorStyle(m.stats.GPUUsage)
+	gpuStyle := getColorStyle(m.stats.GPUUsage).Underline(true)
 	gpuLabel := "GPU Usage"
 	gpuPercent := fmt.Sprintf("%3.0f%%", m.stats.GPUUsage)
 	gpuBar := createBarWithText(gpuLabel, gpuPercent, m.stats.GPUUsage, barWidth, gpuStyle)
@@ -129,12 +129,12 @@ func (m model) View() string {
 	s.WriteString(cpuBar + "  " + gpuBar + "\n")
 
 	// Row 2: Memory | GPU Memory
-	memStyle := getColorStyle(m.stats.MemoryUsage)
+	memStyle := getColorStyle(m.stats.MemoryUsage).Underline(true)
 	memLabel := "Memory"
 	memPercent := fmt.Sprintf("%5.1f%%", m.stats.MemoryUsage)
 	memBar := createBarWithText(memLabel, memPercent, m.stats.MemoryUsage, barWidth, memStyle)
 
-	gpuMemStyle := getColorStyle(m.stats.GPUMemory)
+	gpuMemStyle := getColorStyle(m.stats.GPUMemory).Underline(true)
 	gpuMemLabel := "GPU Memory"
 	gpuMemPercent := fmt.Sprintf("%4.1f%%", m.stats.GPUMemory)
 	gpuMemBar := createBarWithText(gpuMemLabel, gpuMemPercent, m.stats.GPUMemory, barWidth, gpuMemStyle)
@@ -176,8 +176,9 @@ func (m model) View() string {
 			coreLabel := fmt.Sprintf("CPU%02d", coreNum)
 			corePercentText := fmt.Sprintf("%4.1f%%", corePercent)
 
-			// Create bar with label and percentage overlaid
-			coreBar := createBarWithText(coreLabel, corePercentText, corePercent, coreBarWidth, coreStyle)
+			// Create bar with label and percentage overlaid (with underline)
+			coreStyleUnderlined := coreStyle.Underline(true)
+			coreBar := createBarWithText(coreLabel, corePercentText, corePercent, coreBarWidth, coreStyleUnderlined)
 
 			if j < coresPerLine-1 {
 				line.WriteString(coreBar + "  ")
@@ -195,10 +196,10 @@ func (m model) View() string {
 	s.WriteString(headerStyle.Render(fmt.Sprintf("%-10s %5s  %5s  %s", "PID", "CPU%", "MEM%", "COMMAND")))
 	s.WriteString("\n")
 
-	// Process list
+	// Process list (no underline for percentages)
 	for _, proc := range m.stats.Processes {
-		cpuStyle := getColorStyle(proc.CPU)
-		memStyle := getColorStyle(float64(proc.Memory))
+		cpuStyle := getColorStyle(proc.CPU).Underline(false)
+		memStyle := getColorStyle(float64(proc.Memory)).Underline(false)
 		s.WriteString(fmt.Sprintf("%-10d %s  %s  %s\n",
 			proc.PID,
 			cpuStyle.Render(fmt.Sprintf("%5.1f", proc.CPU)),
@@ -259,9 +260,12 @@ func createBarWithText(label, percentText string, percent float64, width int, st
 	}
 
 	// Get the foreground color and create a background style
-	// We'll use the same color for background
+	// We'll use the same color for background, and preserve underline
 	fgColor := style.GetForeground()
 	bgStyle := lipgloss.NewStyle().Background(fgColor).Foreground(lipgloss.Color("0")) // Black text on colored background
+	if style.GetUnderline() {
+		bgStyle = bgStyle.Underline(true)
+	}
 
 	// Calculate where percentage starts (right-aligned)
 	percentStart := width - percentLen
@@ -283,7 +287,8 @@ func createBarWithText(label, percentText string, percent float64, width int, st
 			if i < filled {
 				result.WriteString(bgStyle.Render(" "))
 			} else {
-				result.WriteString(" ")
+				// Apply underline to unfilled spaces too
+				result.WriteString(style.Render(" "))
 			}
 		} else {
 			// Percentage portion (right-aligned)
