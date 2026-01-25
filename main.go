@@ -191,13 +191,37 @@ func (m model) View() string {
 
 	s.WriteString("\n")
 
+	// Calculate how many lines we've used so far
+	// 2 lines for main stats bars + 1 blank + CPU cores lines + 1 blank + 1 header = 5 + CPU core lines
+	coreLines := (coreCount + coresPerLine - 1) / coresPerLine // Ceiling division
+	linesUsed := 2 + 1 + coreLines + 1 + 1 // stats + blank + cores + blank + header
+	
+	// Calculate available lines for processes (leave 1 line margin at bottom)
+	// If height is 0 or not set, use a reasonable default (24 lines is common)
+	terminalHeight := m.height
+	if terminalHeight == 0 {
+		terminalHeight = 24 // Default terminal height
+	}
+	
+	availableLines := terminalHeight - linesUsed - 1
+	if availableLines < 1 {
+		availableLines = 1 // Always show at least 1 process
+	}
+	
+	// Limit number of processes to show
+	maxProcesses := availableLines
+	if maxProcesses > len(m.stats.Processes) {
+		maxProcesses = len(m.stats.Processes)
+	}
+
 	// Process list header
 	headerStyle := lipgloss.NewStyle().Bold(true).Underline(true)
 	s.WriteString(headerStyle.Render(fmt.Sprintf("%-10s %5s  %5s  %s", "PID", "CPU%", "MEM%", "COMMAND")))
 	s.WriteString("\n")
 
 	// Process list (no underline for percentages)
-	for _, proc := range m.stats.Processes {
+	for i := 0; i < maxProcesses; i++ {
+		proc := m.stats.Processes[i]
 		cpuStyle := getColorStyle(proc.CPU).Underline(false)
 		memStyle := getColorStyle(float64(proc.Memory)).Underline(false)
 		s.WriteString(fmt.Sprintf("%-10d %s  %s  %s\n",
@@ -424,8 +448,11 @@ func getTopProcesses() []ProcessInfo {
 		return procInfos[i].CPU > procInfos[j].CPU
 	})
 
-	if len(procInfos) > 10 {
-		procInfos = procInfos[:10]
+	// Return up to 100 processes (enough for most terminal sizes)
+	// The view will limit further based on available height
+	maxToCollect := 100
+	if len(procInfos) > maxToCollect {
+		procInfos = procInfos[:maxToCollect]
 	}
 
 	return procInfos
