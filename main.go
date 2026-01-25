@@ -106,48 +106,49 @@ func (m model) View() string {
 		return redStyle
 	}
 
-	// Main stats bars with labels overlaid
-	barWidth := m.width - 2 // Full width minus small margin
+	// Main stats bars with labels overlaid in a 2x2 grid
+	// Calculate bar width for 2 bars per line with spacing
+	spacingBetweenBars := 2
+	availableWidth := m.width - 2
+	barWidth := (availableWidth - spacingBetweenBars) / 2
 	if barWidth < 20 {
 		barWidth = 20
 	}
 
-	// CPU
+	// Row 1: CPU Usage | GPU Usage
 	cpuStyle := getColorStyle(m.stats.CPUUsage)
 	cpuLabel := "CPU Usage"
 	cpuPercent := fmt.Sprintf("%5.1f%%", m.stats.CPUUsage)
 	cpuBar := createBarWithText(cpuLabel, cpuPercent, m.stats.CPUUsage, barWidth, cpuStyle)
-	s.WriteString(cpuBar + "\n")
 
-	// GPU
 	gpuStyle := getColorStyle(m.stats.GPUUsage)
 	gpuLabel := "GPU Usage"
 	gpuPercent := fmt.Sprintf("%3.0f%%", m.stats.GPUUsage)
 	gpuBar := createBarWithText(gpuLabel, gpuPercent, m.stats.GPUUsage, barWidth, gpuStyle)
-	s.WriteString(gpuBar + "\n")
 
-	// Memory
+	s.WriteString(cpuBar + "  " + gpuBar + "\n")
+
+	// Row 2: Memory | GPU Memory
 	memStyle := getColorStyle(m.stats.MemoryUsage)
 	memLabel := "Memory"
 	memPercent := fmt.Sprintf("%5.1f%%", m.stats.MemoryUsage)
 	memBar := createBarWithText(memLabel, memPercent, m.stats.MemoryUsage, barWidth, memStyle)
-	s.WriteString(memBar + "\n")
 
-	// GPU Memory
 	gpuMemStyle := getColorStyle(m.stats.GPUMemory)
 	gpuMemLabel := "GPU Memory"
 	gpuMemPercent := fmt.Sprintf("%4.1f%%", m.stats.GPUMemory)
 	gpuMemBar := createBarWithText(gpuMemLabel, gpuMemPercent, m.stats.GPUMemory, barWidth, gpuMemStyle)
-	s.WriteString(gpuMemBar + "\n")
+
+	s.WriteString(memBar + "  " + gpuMemBar + "\n")
 
 	s.WriteString("\n")
 
 	// CPU cores with labels overlaid
 	coreCount := len(m.stats.CPUCores)
 	coresPerLine := 4
-	spacingBetweenBars := 2
+	spacingBetweenBars = 2
 
-	availableWidth := m.width - 2
+	availableWidth = m.width - 2
 	// Each bar needs space for label (5 chars) + percentage (6 chars) + some bar space
 	// Total overhead is just spacing between bars since label/percent are inside
 	coreBarWidth := (availableWidth - (coresPerLine-1)*spacingBetweenBars) / coresPerLine
