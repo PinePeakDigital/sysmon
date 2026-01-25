@@ -58,7 +58,36 @@ func main() {
 
 		for {
 			stats := collectStats()
-			display := formatOutput(stats)
+			// Get terminal width - try multiple methods
+			width := 80 // Default fallback
+			
+			// Try 1: GetInnerRect from TextView
+			_, _, w, _ := textView.GetInnerRect()
+			if w > 0 {
+				width = w
+			} else {
+				// Try 2: Environment variable COLUMNS
+				if colsStr := os.Getenv("COLUMNS"); colsStr != "" {
+					if cols, err := strconv.Atoi(colsStr); err == nil && cols > 0 {
+						width = cols
+					}
+				}
+				
+				// Try 3: Use tcell to get screen size
+				if width == 80 {
+					if screen, err := tcell.NewScreen(); err == nil {
+						if err := screen.Init(); err == nil {
+							screenWidth, _ := screen.Size()
+							screen.Fini()
+							if screenWidth > 0 {
+								width = screenWidth
+							}
+						}
+					}
+				}
+			}
+			
+			display := formatOutput(stats, width)
 			textView.SetText(display)
 			<-ticker.C
 		}
@@ -203,35 +232,201 @@ func getColorForPercent(percent float64) string {
 	}
 }
 
-func formatOutput(stats SystemStats) string {
+// getPercentBar returns a visual bar representation of a percentage
+func getPercentBar(percent float64, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	
+	// Clamp percent to 0-100
+	if percent < 0 {
+		percent = 0
+	} else if percent > 100 {
+		percent = 100
+	}
+	
+	// Calculate filled blocks
+	filled := int((percent / 100.0) * float64(width))
+	bar := ""
+	
+	// Use Unicode block characters for a smooth bar
+	for i := 0; i < filled; i++ {
+		bar += "█"
+	}
+	for i := filled; i < width; i++ {
+		bar += "░"
+	}
+	
+	return bar
+}
+
+// getPercentBarWithText overlays text on top of a percentage bar
+// Uses ANSI escape sequences and TranslateANSI to create background color effect
+// Adds boundary characters to delineate the bar edges
+// Label is left-aligned, percentage is right-aligned
+func getPercentBarWithText(label, percentText, colorCode string, percent float64, barWidth int) string {
+	if barWidth <= 0 {
+		return label + percentText
+	}
+	
+	// Clamp percent to 0-100
+	if percent < 0 {
+		percent = 0
+	} else if percent > 100 {
+		percent = 100
+	}
+	
+	// Calculate filled blocks
+	filled := int((percent / 100.0) * float64(barWidth))
+	labelRunes := []rune(label)
+	percentRunes := []rune(percentText)
+	labelLen := len(labelRunes)
+	percentLen := len(percentRunes)
+	totalTextLen := labelLen + percentLen
+	
+	// If text is longer than bar width, just return text with color
+	if totalTextLen >= barWidth {
+		return colorCode + label + percentText + "[-]"
+	}
+	
+	// Build the result with ANSI background colors
+	result := ""
+	
+	// Determine ANSI background color code for filled portion
+	var bgANSI string
+	if colorCode == "[green]" {
+		bgANSI = "\033[42m" // Green background
+	} else if colorCode == "[yellow]" {
+		bgANSI = "\033[43m" // Yellow background
+	} else if colorCode == "[red]" {
+		bgANSI = "\033[41m" // Red background
+	}
+	resetANSI := "\033[0m"
+	
+	// Add left boundary character with color
+	result += colorCode + "[" + "[-]"
+	
+	// Calculate where percentage starts (right-aligned)
+	percentStart := barWidth - percentLen
+	
+	// Build bar with label left-aligned and percentage right-aligned
+	for i := 0; i < barWidth; i++ {
+		if i < labelLen {
+			// Label portion (left-aligned)
+			if i < filled {
+				// Label is on filled portion - overlay with background color
+				result += bgANSI + colorCode + string(labelRunes[i]) + "[-]" + resetANSI
+			} else {
+				// Label is on unfilled portion - show without background
+				result += colorCode + string(labelRunes[i]) + "[-]"
+			}
+		} else if i < percentStart {
+			// Middle portion (between label and percentage) - bar only
+			if i < filled {
+				// Show filled bar with background
+				result += bgANSI + " " + resetANSI
+			} else {
+				// Show space (transparent) to use terminal's background
+				result += " "
+			}
+		} else {
+			// Percentage portion (right-aligned)
+			percentIdx := i - percentStart
+			if i < filled {
+				// Percentage is on filled portion - overlay with background color
+				result += bgANSI + colorCode + string(percentRunes[percentIdx]) + "[-]" + resetANSI
+			} else {
+				// Percentage is on unfilled portion - show without background
+				result += colorCode + string(percentRunes[percentIdx]) + "[-]"
+			}
+		}
+	}
+	
+	// Add right boundary character with color
+	result += colorCode + "]" + "[-]"
+	
+	// Translate ANSI codes to tview format
+	return tview.TranslateANSI(result)
+}
+
+func formatOutput(stats SystemStats, terminalWidth int) string {
 	var output string
 
-	// Header line - match exact format from example with color coding
+	// Header line - labels inside bars like CPU cores
 	cpuColor := getColorForPercent(stats.CPUUsage)
 	gpuColor := getColorForPercent(stats.GPUUsage)
 	memColor := getColorForPercent(stats.MemoryUsage)
 	gpuMemColor := getColorForPercent(stats.GPUMemory)
 
-	output += fmt.Sprintf("CPU Usage:    %s%5.1f%%[-]    GPU Usage:     %s%3.0f%%[-]\n",
-		cpuColor, stats.CPUUsage, gpuColor, stats.GPUUsage)
-	output += fmt.Sprintf("Memory:       %s%5.1f%%[-]    GPU Memory:   %s%4.1f%%[-]\n",
-		memColor, stats.MemoryUsage, gpuMemColor, stats.GPUMemory)
+	cpuLabel := "CPU Usage"
+	cpuPercent := fmt.Sprintf("%5.1f%%", stats.CPUUsage)
+	gpuLabel := "GPU Usage"
+	gpuPercent := fmt.Sprintf("%3.0f%%", stats.GPUUsage)
+	memLabel := "Memory"
+	memPercent := fmt.Sprintf("%5.1f%%", stats.MemoryUsage)
+	gpuMemLabel := "GPU Memory"
+	gpuMemPercent := fmt.Sprintf("%4.1f%%", stats.GPUMemory)
+
+	cpuBarWithText := getPercentBarWithText(cpuLabel, cpuPercent, cpuColor, stats.CPUUsage, 25)
+	gpuBarWithText := getPercentBarWithText(gpuLabel, gpuPercent, gpuColor, stats.GPUUsage, 25)
+	memBarWithText := getPercentBarWithText(memLabel, memPercent, memColor, stats.MemoryUsage, 25)
+	gpuMemBarWithText := getPercentBarWithText(gpuMemLabel, gpuMemPercent, gpuMemColor, stats.GPUMemory, 25)
+
+	output += fmt.Sprintf("%s %s\n", cpuBarWithText, gpuBarWithText)
+	output += fmt.Sprintf("%s %s\n", memBarWithText, gpuMemBarWithText)
 	output += "\n"
 
-	// CPU cores - format exactly as in example (4 cores per line) with color coding
+	// CPU cores - calculate width based on terminal width
 	coreCount := len(stats.CPUCores)
-	for i := 0; i < coreCount; i += 4 {
+	
+	// Calculate cores per line and bar width
+	// Each bar format: [ + label (CPU00) + barWidth (total content width) + percentage (100.0%) + ]
+	// Label: "CPU00" = 5 chars, Percentage: "100.0%" = 6 chars, Brackets: 2 chars
+	// barWidth parameter is the total content width (label + bar space + percentage)
+	// So total bar width = 2 (brackets) + barWidth + 1 (spacing) = 3 + barWidth
+	coresPerLine := 4
+	spacingBetweenBars := 1
+	bracketOverhead := 2 // "[", "]"
+	labelLen := 5         // "CPU00"
+	percentLen := 6       // "100.0%"
+	minBarSpace := 3      // Minimum space for the bar visualization
+	
+	// Minimum barWidth needed: label + minBarSpace + percentage
+	minBarWidth := labelLen + minBarSpace + percentLen // 14
+	
+	// Calculate available width for bars (terminal width minus small margin)
+	availableWidth := terminalWidth - 2
+	
+	// Calculate bar width: (availableWidth - coresPerLine * bracketOverhead - (coresPerLine - 1) * spacing) / coresPerLine
+	barWidth := (availableWidth - coresPerLine*bracketOverhead - (coresPerLine-1)*spacingBetweenBars) / coresPerLine
+	
+	// Ensure minimum bar width (must fit label + bar space + percentage)
+	if barWidth < minBarWidth {
+		barWidth = minBarWidth
+	}
+	
+	// If terminal is too narrow, reduce cores per line
+	if barWidth < minBarWidth && coresPerLine > 2 {
+		coresPerLine = 2
+		barWidth = (availableWidth - coresPerLine*bracketOverhead - (coresPerLine-1)*spacingBetweenBars) / coresPerLine
+		if barWidth < minBarWidth {
+			barWidth = minBarWidth
+		}
+	}
+	
+	for i := 0; i < coreCount; i += coresPerLine {
 		line := ""
-		for j := 0; j < 4 && i+j < coreCount; j++ {
+		for j := 0; j < coresPerLine && i+j < coreCount; j++ {
 			coreNum := i + j
 			corePercent := stats.CPUCores[coreNum]
 			coreColor := getColorForPercent(corePercent)
-			if j < 2 {
-				line += fmt.Sprintf("CPU%02d: %s%4.1f%%[-]  ", coreNum, coreColor, corePercent)
-			} else if j == 2 {
-				line += fmt.Sprintf("CPU%02d: %s%4.1f%%[-]   ", coreNum, coreColor, corePercent)
+			coreLabel := fmt.Sprintf("CPU%02d", coreNum)
+			corePercentText := fmt.Sprintf("%4.1f%%", corePercent)
+			coreBarWithText := getPercentBarWithText(coreLabel, corePercentText, coreColor, corePercent, barWidth)
+			if j < coresPerLine-1 {
+				line += coreBarWithText + " "
 			} else {
-				line += fmt.Sprintf("CPU%02d: %s%4.1f%%[-]", coreNum, coreColor, corePercent)
+				line += coreBarWithText
 			}
 		}
 		output += line + "\n"
