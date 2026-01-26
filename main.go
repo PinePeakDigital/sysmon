@@ -40,12 +40,55 @@ type model struct {
 
 type tickMsg struct{}
 
+// GPU vendor type
+type gpuVendor int
+
+const (
+	gpuVendorNone gpuVendor = iota
+	gpuVendorNVIDIA
+	gpuVendorAMD
+)
+
+// Cache for detected GPU vendor to avoid repeated command execution
+var detectedGPUVendor gpuVendor
+var gpuVendorDetected bool
+
 func main() {
+	// Detect GPU vendor once at startup
+	detectGPUVendor()
+
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running application: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// detectGPUVendor detects which GPU vendor tools are available and caches the result
+func detectGPUVendor() {
+	if gpuVendorDetected {
+		return
+	}
+
+	// Try NVIDIA first
+	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+	if err := cmd.Run(); err == nil {
+		detectedGPUVendor = gpuVendorNVIDIA
+		gpuVendorDetected = true
+		return
+	}
+
+	// Try AMD
+	cmd = exec.Command("rocm-smi", "--showuse")
+	if err := cmd.Run(); err == nil {
+		detectedGPUVendor = gpuVendorAMD
+		gpuVendorDetected = true
+		return
+	}
+
+	// No GPU tools available
+	detectedGPUVendor = gpuVendorNone
+	gpuVendorDetected = true
 }
 
 func initialModel() model {
@@ -375,20 +418,35 @@ func collectStats() SystemStats {
 }
 
 func getGPUUsage() float64 {
-	// Try NVIDIA first (returns first GPU only if multiple GPUs present)
+	switch detectedGPUVendor {
+	case gpuVendorNVIDIA:
+		return getGPUUsageNVIDIA()
+	case gpuVendorAMD:
+		return getGPUUsageAMD()
+	default:
+		return 0.0
+	}
+}
+
+func getGPUUsageNVIDIA() float64 {
 	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
-	if err == nil {
-		usageStr := strings.TrimSpace(string(output))
-		usage, err := strconv.ParseFloat(usageStr, 64)
-		if err == nil {
-			return usage
-		}
+	if err != nil {
+		return 0.0
 	}
 
-	// Try AMD if NVIDIA is not available (returns first GPU only if multiple GPUs present)
-	cmd = exec.Command("rocm-smi", "--showuse")
-	output, err = cmd.Output()
+	usageStr := strings.TrimSpace(string(output))
+	usage, err := strconv.ParseFloat(usageStr, 64)
+	if err != nil {
+		return 0.0
+	}
+
+	return usage
+}
+
+func getGPUUsageAMD() float64 {
+	cmd := exec.Command("rocm-smi", "--showuse")
+	output, err := cmd.Output()
 	if err != nil {
 		return 0.0
 	}
@@ -400,14 +458,17 @@ func getGPUUsage() float64 {
 	// GPU[0]		: GPU use (%): 25
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		if strings.Contains(line, "GPU use (%)") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 3 {
-				usageStr := strings.TrimSpace(parts[2])
-				usage, err := strconv.ParseFloat(usageStr, 64)
-				if err == nil {
-					return usage
-				}
+		// Look for GPU[0] specifically at the start and check for "GPU use (%)"
+		if strings.HasPrefix(strings.TrimSpace(line), "GPU[0]") && strings.Contains(line, "GPU use (%)") {
+			// Use LastIndex to be robust to additional colons in the line
+			lastColonIdx := strings.LastIndex(line, ":")
+			if lastColonIdx == -1 || lastColonIdx+1 >= len(line) {
+				continue
+			}
+			usageStr := strings.TrimSpace(line[lastColonIdx+1:])
+			usage, err := strconv.ParseFloat(usageStr, 64)
+			if err == nil {
+				return usage
 			}
 		}
 	}
@@ -416,23 +477,40 @@ func getGPUUsage() float64 {
 }
 
 func getGPUMemory() float64 {
-	// Try NVIDIA first (returns first GPU only if multiple GPUs present)
+	switch detectedGPUVendor {
+	case gpuVendorNVIDIA:
+		return getGPUMemoryNVIDIA()
+	case gpuVendorAMD:
+		return getGPUMemoryAMD()
+	default:
+		return 0.0
+	}
+}
+
+func getGPUMemoryNVIDIA() float64 {
 	cmd := exec.Command("nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
-	if err == nil {
-		parts := strings.Split(strings.TrimSpace(string(output)), ", ")
-		if len(parts) == 2 {
-			used, err1 := strconv.ParseFloat(parts[0], 64)
-			total, err2 := strconv.ParseFloat(parts[1], 64)
-			if err1 == nil && err2 == nil && total != 0 {
-				return (used / total) * 100.0
-			}
-		}
+	if err != nil {
+		return 0.0
 	}
 
-	// Try AMD if NVIDIA is not available (returns first GPU only if multiple GPUs present)
-	cmd = exec.Command("rocm-smi", "--showmeminfo", "vram")
-	output, err = cmd.Output()
+	parts := strings.Split(strings.TrimSpace(string(output)), ", ")
+	if len(parts) != 2 {
+		return 0.0
+	}
+
+	used, err1 := strconv.ParseFloat(parts[0], 64)
+	total, err2 := strconv.ParseFloat(parts[1], 64)
+	if err1 != nil || err2 != nil || total == 0 {
+		return 0.0
+	}
+
+	return (used / total) * 100.0
+}
+
+func getGPUMemoryAMD() float64 {
+	cmd := exec.Command("rocm-smi", "--showmeminfo", "vram")
+	output, err := cmd.Output()
 	if err != nil {
 		return 0.0
 	}
@@ -445,30 +523,48 @@ func getGPUMemory() float64 {
 	// ================================ VRAM Total Used Memory (B) ================================
 	// GPU[0]		: VRAM Total Used Memory (B): 1234567890
 	var totalMem, usedMem float64
+	var foundTotal, foundUsed bool
+
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		if strings.Contains(line, "VRAM Total Memory (B)") && strings.Contains(line, "GPU[0]") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 3 {
-				totalStr := strings.TrimSpace(parts[2])
-				total, err := strconv.ParseFloat(totalStr, 64)
-				if err == nil {
-					totalMem = total
+		trimmedLine := strings.TrimSpace(line)
+
+		// Look for GPU[0] specifically at the start
+		if strings.HasPrefix(trimmedLine, "GPU[0]") {
+			if strings.Contains(line, "VRAM Total Memory (B)") && !strings.Contains(line, "Used") {
+				// Use LastIndex to be robust to additional colons in the line
+				lastColonIdx := strings.LastIndex(line, ":")
+				if lastColonIdx != -1 && lastColonIdx+1 < len(line) {
+					totalStr := strings.TrimSpace(line[lastColonIdx+1:])
+					if total, err := strconv.ParseFloat(totalStr, 64); err == nil {
+						totalMem = total
+						foundTotal = true
+						// If we've found both values, we can stop searching
+						if foundUsed {
+							break
+						}
+					}
 				}
-			}
-		} else if strings.Contains(line, "VRAM Total Used Memory (B)") && strings.Contains(line, "GPU[0]") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 3 {
-				usedStr := strings.TrimSpace(parts[2])
-				used, err := strconv.ParseFloat(usedStr, 64)
-				if err == nil {
-					usedMem = used
+			} else if strings.Contains(line, "VRAM Total Used Memory (B)") {
+				// Use LastIndex to be robust to additional colons in the line
+				lastColonIdx := strings.LastIndex(line, ":")
+				if lastColonIdx != -1 && lastColonIdx+1 < len(line) {
+					usedStr := strings.TrimSpace(line[lastColonIdx+1:])
+					if used, err := strconv.ParseFloat(usedStr, 64); err == nil {
+						usedMem = used
+						foundUsed = true
+						// If we've found both values, we can stop searching
+						if foundTotal {
+							break
+						}
+					}
 				}
 			}
 		}
 	}
 
-	if totalMem > 0 {
+	// Only calculate percentage if we successfully parsed both values
+	if foundTotal && foundUsed && totalMem > 0 {
 		return (usedMem / totalMem) * 100.0
 	}
 
