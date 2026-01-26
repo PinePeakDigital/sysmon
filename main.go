@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -51,7 +52,7 @@ const (
 
 // Cache for detected GPU vendor to avoid repeated command execution
 var detectedGPUVendor gpuVendor
-var gpuVendorDetected bool
+var gpuVendorOnce sync.Once
 
 func main() {
 	// Detect GPU vendor once at startup
@@ -66,29 +67,24 @@ func main() {
 
 // detectGPUVendor detects which GPU vendor tools are available and caches the result
 func detectGPUVendor() {
-	if gpuVendorDetected {
-		return
-	}
+	gpuVendorOnce.Do(func() {
+		// Try NVIDIA first
+		cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+		if err := cmd.Run(); err == nil {
+			detectedGPUVendor = gpuVendorNVIDIA
+			return
+		}
 
-	// Try NVIDIA first
-	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
-	if err := cmd.Run(); err == nil {
-		detectedGPUVendor = gpuVendorNVIDIA
-		gpuVendorDetected = true
-		return
-	}
+		// Try AMD
+		cmd = exec.Command("rocm-smi", "--showuse")
+		if err := cmd.Run(); err == nil {
+			detectedGPUVendor = gpuVendorAMD
+			return
+		}
 
-	// Try AMD
-	cmd = exec.Command("rocm-smi", "--showuse")
-	if err := cmd.Run(); err == nil {
-		detectedGPUVendor = gpuVendorAMD
-		gpuVendorDetected = true
-		return
-	}
-
-	// No GPU tools available
-	detectedGPUVendor = gpuVendorNone
-	gpuVendorDetected = true
+		// No GPU tools available
+		detectedGPUVendor = gpuVendorNone
+	})
 }
 
 func initialModel() model {
@@ -460,20 +456,25 @@ func getGPUUsageAMD() float64 {
 	for _, line := range lines {
 		// Look for GPU[0] specifically at the start and check for "GPU use (%)"
 		if strings.HasPrefix(strings.TrimSpace(line), "GPU[0]") && strings.Contains(line, "GPU use (%)") {
-			// Use LastIndex to be robust to additional colons in the line
-			lastColonIdx := strings.LastIndex(line, ":")
-			if lastColonIdx == -1 || lastColonIdx+1 >= len(line) {
-				continue
-			}
-			usageStr := strings.TrimSpace(line[lastColonIdx+1:])
-			usage, err := strconv.ParseFloat(usageStr, 64)
-			if err == nil {
-				return usage
+			// Extract value after the last colon
+			if valueStr, ok := extractValueAfterLastColon(line); ok {
+				if usage, err := strconv.ParseFloat(valueStr, 64); err == nil {
+					return usage
+				}
 			}
 		}
 	}
 
 	return 0.0
+}
+
+// extractValueAfterLastColon extracts and trims the string after the last colon in a line
+func extractValueAfterLastColon(line string) (string, bool) {
+	lastColonIdx := strings.LastIndex(line, ":")
+	if lastColonIdx == -1 || lastColonIdx+1 > len(line) {
+		return "", false
+	}
+	return strings.TrimSpace(line[lastColonIdx+1:]), true
 }
 
 func getGPUMemory() float64 {
@@ -532,10 +533,8 @@ func getGPUMemoryAMD() float64 {
 		// Look for GPU[0] specifically at the start
 		if strings.HasPrefix(trimmedLine, "GPU[0]") {
 			if strings.Contains(line, "VRAM Total Memory (B)") && !strings.Contains(line, "Used") {
-				// Use LastIndex to be robust to additional colons in the line
-				lastColonIdx := strings.LastIndex(line, ":")
-				if lastColonIdx != -1 && lastColonIdx+1 < len(line) {
-					totalStr := strings.TrimSpace(line[lastColonIdx+1:])
+				// Extract value after the last colon
+				if totalStr, ok := extractValueAfterLastColon(line); ok {
 					if total, err := strconv.ParseFloat(totalStr, 64); err == nil {
 						totalMem = total
 						foundTotal = true
@@ -546,10 +545,8 @@ func getGPUMemoryAMD() float64 {
 					}
 				}
 			} else if strings.Contains(line, "VRAM Total Used Memory (B)") {
-				// Use LastIndex to be robust to additional colons in the line
-				lastColonIdx := strings.LastIndex(line, ":")
-				if lastColonIdx != -1 && lastColonIdx+1 < len(line) {
-					usedStr := strings.TrimSpace(line[lastColonIdx+1:])
+				// Extract value after the last colon
+				if usedStr, ok := extractValueAfterLastColon(line); ok {
 					if used, err := strconv.ParseFloat(usedStr, 64); err == nil {
 						usedMem = used
 						foundUsed = true
