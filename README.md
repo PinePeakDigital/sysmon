@@ -6,7 +6,7 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 
 - Real-time CPU usage (overall and per-core)
 - Memory usage statistics
-- GPU usage and memory (via nvidia-smi, if available)
+- GPU usage and memory (via nvidia-smi for NVIDIA or rocm-smi for AMD, if available)
 - Top processes by CPU usage
 - Clean, readable terminal interface
 
@@ -14,7 +14,8 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 
 - Go 1.21 or later
 - Linux system (for system stats)
-- nvidia-smi (optional, for GPU stats)
+- nvidia-smi (optional, for NVIDIA GPU stats)
+- rocm-smi (optional, for AMD GPU stats)
 
 ## Installation
 

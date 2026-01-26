@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,12 +41,50 @@ type model struct {
 
 type tickMsg struct{}
 
+// GPU vendor type
+type gpuVendor int
+
+const (
+	gpuVendorNone gpuVendor = iota
+	gpuVendorNVIDIA
+	gpuVendorAMD
+)
+
+// Cache for detected GPU vendor to avoid repeated command execution
+var detectedGPUVendor gpuVendor
+var gpuVendorOnce sync.Once
+
 func main() {
+	// Detect GPU vendor once at startup
+	detectGPUVendor()
+
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running application: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// detectGPUVendor detects which GPU vendor tools are available and caches the result
+func detectGPUVendor() {
+	gpuVendorOnce.Do(func() {
+		// Try NVIDIA first
+		cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+		if err := cmd.Run(); err == nil {
+			detectedGPUVendor = gpuVendorNVIDIA
+			return
+		}
+
+		// Try AMD
+		cmd = exec.Command("rocm-smi", "--showuse")
+		if err := cmd.Run(); err == nil {
+			detectedGPUVendor = gpuVendorAMD
+			return
+		}
+
+		// No GPU tools available
+		detectedGPUVendor = gpuVendorNone
+	})
 }
 
 func initialModel() model {
@@ -194,20 +233,20 @@ func (m model) View() string {
 	// Calculate how many lines we've used so far
 	// 2 lines for main stats bars + 1 blank + CPU cores lines + 1 blank + 1 header = 5 + CPU core lines
 	coreLines := (coreCount + coresPerLine - 1) / coresPerLine // Ceiling division
-	linesUsed := 2 + 1 + coreLines + 1 + 1 // stats + blank + cores + blank + header
-	
+	linesUsed := 2 + 1 + coreLines + 1 + 1                     // stats + blank + cores + blank + header
+
 	// Calculate available lines for processes (leave 1 line margin at bottom)
 	// If height is 0 or not set, use a reasonable default (24 lines is common)
 	terminalHeight := m.height
 	if terminalHeight == 0 {
 		terminalHeight = 24 // Default terminal height
 	}
-	
+
 	availableLines := terminalHeight - linesUsed - 1
 	if availableLines < 1 {
 		availableLines = 1 // Always show at least 1 process
 	}
-	
+
 	// Limit number of processes to show
 	maxProcesses := availableLines
 	if maxProcesses > len(m.stats.Processes) {
@@ -375,6 +414,17 @@ func collectStats() SystemStats {
 }
 
 func getGPUUsage() float64 {
+	switch detectedGPUVendor {
+	case gpuVendorNVIDIA:
+		return getGPUUsageNVIDIA()
+	case gpuVendorAMD:
+		return getGPUUsageAMD()
+	default:
+		return 0.0
+	}
+}
+
+func getGPUUsageNVIDIA() float64 {
 	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
 	if err != nil {
@@ -390,7 +440,55 @@ func getGPUUsage() float64 {
 	return usage
 }
 
+func getGPUUsageAMD() float64 {
+	cmd := exec.Command("rocm-smi", "--showuse")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0.0
+	}
+
+	// Parse rocm-smi output
+	// rocm-smi --showuse output format:
+	// ========================= ROCm System Management Interface =========================
+	// ================================ GPU use ================================
+	// GPU[0]		: GPU use (%): 25
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		// Look for GPU[0] specifically at the start and check for "GPU use (%)"
+		if strings.HasPrefix(strings.TrimSpace(line), "GPU[0]") && strings.Contains(line, "GPU use (%)") {
+			// Extract value after the last colon
+			if valueStr, ok := extractValueAfterLastColon(line); ok {
+				if usage, err := strconv.ParseFloat(valueStr, 64); err == nil {
+					return usage
+				}
+			}
+		}
+	}
+
+	return 0.0
+}
+
+// extractValueAfterLastColon extracts and trims the string after the last colon in a line
+func extractValueAfterLastColon(line string) (string, bool) {
+	lastColonIdx := strings.LastIndex(line, ":")
+	if lastColonIdx == -1 || lastColonIdx+1 > len(line) {
+		return "", false
+	}
+	return strings.TrimSpace(line[lastColonIdx+1:]), true
+}
+
 func getGPUMemory() float64 {
+	switch detectedGPUVendor {
+	case gpuVendorNVIDIA:
+		return getGPUMemoryNVIDIA()
+	case gpuVendorAMD:
+		return getGPUMemoryAMD()
+	default:
+		return 0.0
+	}
+}
+
+func getGPUMemoryNVIDIA() float64 {
 	cmd := exec.Command("nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
 	if err != nil {
@@ -409,6 +507,65 @@ func getGPUMemory() float64 {
 	}
 
 	return (used / total) * 100.0
+}
+
+func getGPUMemoryAMD() float64 {
+	cmd := exec.Command("rocm-smi", "--showmeminfo", "vram")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0.0
+	}
+
+	// Parse rocm-smi output
+	// rocm-smi --showmeminfo vram output format:
+	// ========================= ROCm System Management Interface =========================
+	// ================================ VRAM Total Memory (B) ================================
+	// GPU[0]		: VRAM Total Memory (B): 17163091968
+	// ================================ VRAM Total Used Memory (B) ================================
+	// GPU[0]		: VRAM Total Used Memory (B): 1234567890
+	var totalMem, usedMem float64
+	var foundTotal, foundUsed bool
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Look for GPU[0] specifically at the start
+		if strings.HasPrefix(trimmedLine, "GPU[0]") {
+			if strings.Contains(line, "VRAM Total Memory (B)") && !strings.Contains(line, "Used") {
+				// Extract value after the last colon
+				if totalStr, ok := extractValueAfterLastColon(line); ok {
+					if total, err := strconv.ParseFloat(totalStr, 64); err == nil {
+						totalMem = total
+						foundTotal = true
+						// If we've found both values, we can stop searching
+						if foundUsed {
+							break
+						}
+					}
+				}
+			} else if strings.Contains(line, "VRAM Total Used Memory (B)") {
+				// Extract value after the last colon
+				if usedStr, ok := extractValueAfterLastColon(line); ok {
+					if used, err := strconv.ParseFloat(usedStr, 64); err == nil {
+						usedMem = used
+						foundUsed = true
+						// If we've found both values, we can stop searching
+						if foundTotal {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Only calculate percentage if we successfully parsed both values
+	if foundTotal && foundUsed && totalMem > 0 {
+		return (usedMem / totalMem) * 100.0
+	}
+
+	return 0.0
 }
 
 func getTopProcesses() []ProcessInfo {
