@@ -375,7 +375,7 @@ func collectStats() SystemStats {
 }
 
 func getGPUUsage() float64 {
-	// Try NVIDIA first
+	// Try NVIDIA first (returns first GPU only if multiple GPUs present)
 	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
 	if err == nil {
@@ -386,7 +386,7 @@ func getGPUUsage() float64 {
 		}
 	}
 
-	// Try AMD if NVIDIA is not available
+	// Try AMD if NVIDIA is not available (returns first GPU only if multiple GPUs present)
 	cmd = exec.Command("rocm-smi", "--showuse")
 	output, err = cmd.Output()
 	if err != nil {
@@ -416,7 +416,7 @@ func getGPUUsage() float64 {
 }
 
 func getGPUMemory() float64 {
-	// Try NVIDIA first
+	// Try NVIDIA first (returns first GPU only if multiple GPUs present)
 	cmd := exec.Command("nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
 	if err == nil {
@@ -430,7 +430,7 @@ func getGPUMemory() float64 {
 		}
 	}
 
-	// Try AMD if NVIDIA is not available
+	// Try AMD if NVIDIA is not available (returns first GPU only if multiple GPUs present)
 	cmd = exec.Command("rocm-smi", "--showmeminfo", "vram")
 	output, err = cmd.Output()
 	if err != nil {
