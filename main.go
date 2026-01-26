@@ -194,20 +194,20 @@ func (m model) View() string {
 	// Calculate how many lines we've used so far
 	// 2 lines for main stats bars + 1 blank + CPU cores lines + 1 blank + 1 header = 5 + CPU core lines
 	coreLines := (coreCount + coresPerLine - 1) / coresPerLine // Ceiling division
-	linesUsed := 2 + 1 + coreLines + 1 + 1 // stats + blank + cores + blank + header
-	
+	linesUsed := 2 + 1 + coreLines + 1 + 1                     // stats + blank + cores + blank + header
+
 	// Calculate available lines for processes (leave 1 line margin at bottom)
 	// If height is 0 or not set, use a reasonable default (24 lines is common)
 	terminalHeight := m.height
 	if terminalHeight == 0 {
 		terminalHeight = 24 // Default terminal height
 	}
-	
+
 	availableLines := terminalHeight - linesUsed - 1
 	if availableLines < 1 {
 		availableLines = 1 // Always show at least 1 process
 	}
-	
+
 	// Limit number of processes to show
 	maxProcesses := availableLines
 	if maxProcesses > len(m.stats.Processes) {
@@ -375,40 +375,104 @@ func collectStats() SystemStats {
 }
 
 func getGPUUsage() float64 {
+	// Try NVIDIA first
 	cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
+	if err == nil {
+		usageStr := strings.TrimSpace(string(output))
+		usage, err := strconv.ParseFloat(usageStr, 64)
+		if err == nil {
+			return usage
+		}
+	}
+
+	// Try AMD if NVIDIA is not available
+	cmd = exec.Command("rocm-smi", "--showuse")
+	output, err = cmd.Output()
 	if err != nil {
 		return 0.0
 	}
 
-	usageStr := strings.TrimSpace(string(output))
-	usage, err := strconv.ParseFloat(usageStr, 64)
-	if err != nil {
-		return 0.0
+	// Parse rocm-smi output
+	// rocm-smi --showuse output format:
+	// ========================= ROCm System Management Interface =========================
+	// ================================ GPU use ================================
+	// GPU[0]		: GPU use (%): 25
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "GPU use (%)") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 3 {
+				usageStr := strings.TrimSpace(parts[2])
+				usage, err := strconv.ParseFloat(usageStr, 64)
+				if err == nil {
+					return usage
+				}
+			}
+		}
 	}
 
-	return usage
+	return 0.0
 }
 
 func getGPUMemory() float64 {
+	// Try NVIDIA first
 	cmd := exec.Command("nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits")
 	output, err := cmd.Output()
+	if err == nil {
+		parts := strings.Split(strings.TrimSpace(string(output)), ", ")
+		if len(parts) == 2 {
+			used, err1 := strconv.ParseFloat(parts[0], 64)
+			total, err2 := strconv.ParseFloat(parts[1], 64)
+			if err1 == nil && err2 == nil && total != 0 {
+				return (used / total) * 100.0
+			}
+		}
+	}
+
+	// Try AMD if NVIDIA is not available
+	cmd = exec.Command("rocm-smi", "--showmeminfo", "vram")
+	output, err = cmd.Output()
 	if err != nil {
 		return 0.0
 	}
 
-	parts := strings.Split(strings.TrimSpace(string(output)), ", ")
-	if len(parts) != 2 {
-		return 0.0
+	// Parse rocm-smi output
+	// rocm-smi --showmeminfo vram output format:
+	// ========================= ROCm System Management Interface =========================
+	// ================================ VRAM Total Memory (B) ================================
+	// GPU[0]		: VRAM Total Memory (B): 17163091968
+	// ================================ VRAM Total Used Memory (B) ================================
+	// GPU[0]		: VRAM Total Used Memory (B): 1234567890
+	var totalMem, usedMem float64
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "VRAM Total Memory (B)") && strings.Contains(line, "GPU[0]") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 3 {
+				totalStr := strings.TrimSpace(parts[2])
+				total, err := strconv.ParseFloat(totalStr, 64)
+				if err == nil {
+					totalMem = total
+				}
+			}
+		} else if strings.Contains(line, "VRAM Total Used Memory (B)") && strings.Contains(line, "GPU[0]") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 3 {
+				usedStr := strings.TrimSpace(parts[2])
+				used, err := strconv.ParseFloat(usedStr, 64)
+				if err == nil {
+					usedMem = used
+				}
+			}
+		}
 	}
 
-	used, err1 := strconv.ParseFloat(parts[0], 64)
-	total, err2 := strconv.ParseFloat(parts[1], 64)
-	if err1 != nil || err2 != nil || total == 0 {
-		return 0.0
+	if totalMem > 0 {
+		return (usedMem / totalMem) * 100.0
 	}
 
-	return (used / total) * 100.0
+	return 0.0
 }
 
 func getTopProcesses() []ProcessInfo {
