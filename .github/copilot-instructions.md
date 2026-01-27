@@ -44,7 +44,7 @@ perf(cpu): optimize per-core usage calculation
 ### Guidelines
 
 - Use lowercase for type and scope
-- Keep description concise (50 characters or less recommended)
+- Keep description concise (72 characters or less)
 - Use imperative mood ("add" not "added" or "adds")
 - Don't end description with a period
 - Scope is optional but recommended for clarity
