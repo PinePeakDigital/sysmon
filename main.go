@@ -259,18 +259,54 @@ func (m model) View() string {
 	s.WriteString("\n")
 
 	// Process list (no underline for percentages)
+	// Calculate available width for COMMAND column
+	// Format: "PID (10) CPU% (7 including spaces) MEM% (7 including spaces) COMMAND"
+	// Total fixed width: 10 + 7 + 7 + 4 (spacing between columns) = 28
+	commandWidth := m.width - 28
+	if commandWidth < 10 {
+		commandWidth = 10 // Minimum width to show something useful
+	}
+
 	for i := 0; i < maxProcesses; i++ {
 		proc := m.stats.Processes[i]
 		cpuStyle := getColorStyle(proc.CPU).Underline(false)
 		memStyle := getColorStyle(float64(proc.Memory)).Underline(false)
+
+		// Truncate command from the left if it's too long
+		truncatedCommand := truncateLeft(proc.Command, commandWidth)
+
 		s.WriteString(fmt.Sprintf("%-10d %s  %s  %s\n",
 			proc.PID,
 			cpuStyle.Render(fmt.Sprintf("%5.1f", proc.CPU)),
 			memStyle.Render(fmt.Sprintf("%5.1f", proc.Memory)),
-			proc.Command))
+			truncatedCommand))
 	}
 
 	return s.String()
+}
+
+// truncateLeft truncates a string from the left if it exceeds maxWidth,
+// adding "..." prefix to indicate truncation
+func truncateLeft(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+
+	// Convert to runes to handle unicode characters correctly
+	runes := []rune(s)
+
+	if len(runes) <= maxWidth {
+		return s
+	}
+
+	// Need room for "..." prefix (3 characters)
+	if maxWidth <= 3 {
+		return "..."[:maxWidth]
+	}
+
+	// Take the rightmost characters and add "..." prefix
+	truncated := "..." + string(runes[len(runes)-(maxWidth-3):])
+	return truncated
 }
 
 func createSimpleBar(percent float64, width int, style lipgloss.Style) string {
