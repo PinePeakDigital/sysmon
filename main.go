@@ -41,6 +41,15 @@ type model struct {
 
 type tickMsg struct{}
 
+// Constants for process list formatting
+const (
+	// Width of fixed columns in the process list:
+	// PID (10) + CPU% (7 including spaces) + MEM% (7 including spaces) + spacing (4)
+	fixedColumnsWidth = 28
+	// Minimum width for the COMMAND column to show something useful
+	minCommandWidth = 10
+)
+
 // GPU vendor type
 type gpuVendor int
 
@@ -260,11 +269,9 @@ func (m model) View() string {
 
 	// Process list (no underline for percentages)
 	// Calculate available width for COMMAND column
-	// Format: "PID (10) CPU% (7 including spaces) MEM% (7 including spaces) COMMAND"
-	// Total fixed width: 10 + 7 + 7 + 4 (spacing between columns) = 28
-	commandWidth := m.width - 28
-	if commandWidth < 10 {
-		commandWidth = 10 // Minimum width to show something useful
+	commandWidth := m.width - fixedColumnsWidth
+	if commandWidth < minCommandWidth {
+		commandWidth = minCommandWidth
 	}
 
 	for i := 0; i < maxProcesses; i++ {
