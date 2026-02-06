@@ -43,9 +43,9 @@ type tickMsg struct{}
 
 // Constants for process list formatting
 const (
-	// Width of fixed columns in the process list:
-	// PID (10) + CPU% (7 including spaces) + MEM% (7 including spaces) + spacing (4)
-	fixedColumnsWidth = 28
+	// Width of fixed columns in the process list based on "%-10d %s  %s  %s\n":
+	// PID (10) + space (1) + CPU% (5) + spaces (2) + MEM% (5) + spaces (2) = 25
+	fixedColumnsWidth = 25
 	// Minimum width for the COMMAND column to show something useful
 	minCommandWidth = 10
 )
