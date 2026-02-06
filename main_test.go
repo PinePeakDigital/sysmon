@@ -103,32 +103,32 @@ func TestProgressBarWidths(t *testing.T) {
 			spacingBetweenBars := 2
 			availableWidth := tt.terminalWidth
 			barWidth := (availableWidth - spacingBetweenBars) / 2
-			
+
 			// Calculate total width used by the main stats bars
 			totalMainStatsWidth := barWidth + spacingBetweenBars + barWidth
-			
+
 			// Due to integer division, we may lose 1 character (the remainder)
 			// The grid should use availableWidth or availableWidth-1
 			if totalMainStatsWidth < availableWidth-1 || totalMainStatsWidth > availableWidth {
-				t.Errorf("Main stats grid width incorrect: used %d, expected between %d and %d", 
+				t.Errorf("Main stats grid width incorrect: used %d, expected between %d and %d",
 					totalMainStatsWidth, availableWidth-1, availableWidth)
 			}
-			
+
 			// Test CPU cores grid (4 bars per line)
 			coresPerLine := 4
 			coreBarWidth := (availableWidth - (coresPerLine-1)*spacingBetweenBars) / coresPerLine
-			
+
 			// Calculate total width used by CPU cores
 			totalCoresWidth := coresPerLine*coreBarWidth + (coresPerLine-1)*spacingBetweenBars
-			
+
 			// Due to integer division, we may lose up to (coresPerLine-1) characters
 			// The grid should be close to availableWidth
 			widthDiff := availableWidth - totalCoresWidth
 			if widthDiff < 0 || widthDiff >= coresPerLine {
-				t.Errorf("CPU cores grid width incorrect: used %d, expected close to %d (diff: %d)", 
+				t.Errorf("CPU cores grid width incorrect: used %d, expected close to %d (diff: %d)",
 					totalCoresWidth, availableWidth, widthDiff)
 			}
-			
+
 			// Verify that we're using the full width (not width-2 as before)
 			// This is the main fix - we should be using tt.terminalWidth, not tt.terminalWidth-2
 			if availableWidth != tt.terminalWidth {
