@@ -311,9 +311,12 @@ func truncateLeft(s string, maxWidth int) string {
 		return "..."[:maxWidth]
 	}
 
-	// Take the rightmost characters and add "..." prefix
-	truncated := "..." + string(runes[len(runes)-(maxWidth-3):])
-	return truncated
+	// Use strings.Builder for efficient string construction
+	var builder strings.Builder
+	builder.Grow(maxWidth) // Pre-allocate capacity
+	builder.WriteString("...")
+	builder.WriteString(string(runes[len(runes)-(maxWidth-3):]))
+	return builder.String()
 }
 
 func createSimpleBar(percent float64, width int, style lipgloss.Style) string {
