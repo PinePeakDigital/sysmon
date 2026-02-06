@@ -41,6 +41,15 @@ type model struct {
 
 type tickMsg struct{}
 
+// Constants for process list formatting
+const (
+	// Width of fixed columns in the process list based on "%-10d %s  %s  %s\n":
+	// PID (10) + space (1) + CPU% (5) + spaces (2) + MEM% (5) + spaces (2) = 25
+	fixedColumnsWidth = 25
+	// Minimum width for the COMMAND column to show something useful
+	minCommandWidth = 10
+)
+
 // GPU vendor type
 type gpuVendor int
 
@@ -259,18 +268,55 @@ func (m model) View() string {
 	s.WriteString("\n")
 
 	// Process list (no underline for percentages)
+	// Calculate available width for COMMAND column
+	commandWidth := m.width - fixedColumnsWidth
+	if commandWidth < minCommandWidth {
+		commandWidth = minCommandWidth
+	}
+
 	for i := 0; i < maxProcesses; i++ {
 		proc := m.stats.Processes[i]
 		cpuStyle := getColorStyle(proc.CPU).Underline(false)
 		memStyle := getColorStyle(float64(proc.Memory)).Underline(false)
+
+		// Truncate command from the left if it's too long
+		truncatedCommand := truncateLeft(proc.Command, commandWidth)
+
 		s.WriteString(fmt.Sprintf("%-10d %s  %s  %s\n",
 			proc.PID,
 			cpuStyle.Render(fmt.Sprintf("%5.1f", proc.CPU)),
 			memStyle.Render(fmt.Sprintf("%5.1f", proc.Memory)),
-			proc.Command))
+			truncatedCommand))
 	}
 
 	return s.String()
+}
+
+// truncateLeft truncates a string from the left if it exceeds maxWidth,
+// adding "..." prefix to indicate truncation
+func truncateLeft(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+
+	// Convert to runes to handle unicode characters correctly
+	runes := []rune(s)
+
+	if len(runes) <= maxWidth {
+		return s
+	}
+
+	// Need room for "..." prefix (3 characters)
+	if maxWidth <= 3 {
+		return "..."[:maxWidth]
+	}
+
+	// Use strings.Builder for efficient string construction
+	var builder strings.Builder
+	builder.Grow(maxWidth) // Pre-allocate capacity
+	builder.WriteString("...")
+	builder.WriteString(string(runes[len(runes)-(maxWidth-3):]))
+	return builder.String()
 }
 
 func createSimpleBar(percent float64, width int, style lipgloss.Style) string {
