@@ -44,8 +44,8 @@ type tickMsg struct{}
 // Constants for process list formatting
 const (
 	// Width of fixed columns in the process list based on "%-10d %s  %s  %s\n":
-	// PID (10) + space (1) + CPU% (5) + spaces (2) + MEM% (5) + spaces (2) = 25
-	fixedColumnsWidth = 25
+	// PID (10) + space (1) + CPU% (6) + spaces (2) + MEM% (5) + spaces (2) = 26
+	fixedColumnsWidth = 26
 	// Minimum width for the COMMAND column to show something useful
 	minCommandWidth = 10
 )
@@ -264,7 +264,7 @@ func (m model) View() string {
 
 	// Process list header
 	headerStyle := lipgloss.NewStyle().Bold(true).Underline(true)
-	s.WriteString(headerStyle.Render(fmt.Sprintf("%-10s %5s  %5s  %s", "PID", "CPU%", "MEM%", "COMMAND")))
+	s.WriteString(headerStyle.Render(fmt.Sprintf("%-10s %6s  %5s  %s", "PID", "CPU%", "MEM%", "COMMAND")))
 	s.WriteString("\n")
 
 	// Process list (no underline for percentages)
@@ -284,7 +284,7 @@ func (m model) View() string {
 
 		s.WriteString(fmt.Sprintf("%-10d %s  %s  %s\n",
 			proc.PID,
-			cpuStyle.Render(fmt.Sprintf("%5.1f", proc.CPU)),
+			cpuStyle.Render(fmt.Sprintf("%6.1f", proc.CPU)),
 			memStyle.Render(fmt.Sprintf("%5.1f", proc.Memory)),
 			truncatedCommand))
 	}
