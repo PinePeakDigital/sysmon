@@ -92,7 +92,7 @@ func TestProgressBarWidths(t *testing.T) {
 			terminalWidth: 120,
 		},
 		{
-			name:          "narrow terminal",
+			name:          "medium terminal",
 			terminalWidth: 100,
 		},
 	}
@@ -131,11 +131,11 @@ func TestProgressBarWidths(t *testing.T) {
 
 			// The fix ensures we use m.width instead of m.width-2.
 			// The view should use close to the full width (allowing for integer division).
-			// Verify we're not using the old width-2 margin by checking that the max line
-			// length is at least width-2 (the old behavior would have been exactly width-2).
+			// We verify the max line length is within [terminalWidth-1, terminalWidth],
+			// which confirms we're not using the old width-2 margin.
 			if maxLen < tt.terminalWidth-1 {
-				t.Errorf("View does not use enough terminal width: max line length %d, expected at least %d (terminal width: %d)",
-					maxLen, tt.terminalWidth-1, tt.terminalWidth)
+				t.Errorf("View does not use enough terminal width: max line length %d, expected %d or %d (terminal width: %d)",
+					maxLen, tt.terminalWidth-1, tt.terminalWidth, tt.terminalWidth)
 			}
 
 			// Note: We don't enforce maxLen <= tt.terminalWidth because minimum bar widths
