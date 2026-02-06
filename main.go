@@ -157,7 +157,7 @@ func (m model) View() string {
 	// Main stats bars with labels overlaid in a 2x2 grid
 	// Calculate bar width for 2 bars per line with spacing
 	spacingBetweenBars := 2
-	availableWidth := m.width - 2
+	availableWidth := m.width
 	barWidth := (availableWidth - spacingBetweenBars) / 2
 	if barWidth < 20 {
 		barWidth = 20
@@ -196,7 +196,7 @@ func (m model) View() string {
 	coresPerLine := 4
 	spacingBetweenBars = 2
 
-	availableWidth = m.width - 2
+	availableWidth = m.width
 	// Each bar needs space for label (5 chars) + percentage (6 chars) + some bar space
 	// Total overhead is just spacing between bars since label/percent are inside
 	coreBarWidth := (availableWidth - (coresPerLine-1)*spacingBetweenBars) / coresPerLine
