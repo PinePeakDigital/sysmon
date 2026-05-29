@@ -185,15 +185,15 @@ func TestViewRendersCorrectly(t *testing.T) {
 
 	// Render the view
 	view := m.View()
-	
+
 	// Split into lines
 	lines := strings.Split(view, "\n")
-	
+
 	// Basic sanity checks
 	if len(lines) < 5 {
 		t.Errorf("Expected at least 5 lines in output, got %d", len(lines))
 	}
-	
+
 	// Verify the view contains expected content
 	viewContent := strings.ToLower(view)
 	expectedStrings := []string{"cpu usage", "memory", "gpu usage", "pid", "command"}
