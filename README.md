@@ -13,7 +13,7 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 ## Requirements
 
 - Go 1.21 or later
-- Linux system (for system stats)
+- Linux, macOS, or Windows (per-core CPU stats on macOS require a cgo-enabled build — see the [macOS note](#from-source) below)
 - nvidia-smi (optional, for NVIDIA GPU stats)
 - rocm-smi (optional, for AMD GPU stats)
 
@@ -39,6 +39,11 @@ After installation, `sysmon` will be available in your `PATH` (typically `~/.loc
 go mod tidy
 go build -o sysmon
 ```
+
+> **macOS note:** per-core CPU stats require cgo (gopsutil reads them via
+> `host_processor_info`). A native `go build` enables cgo by default, so this
+> works out of the box. If you build with `CGO_ENABLED=0`, the per-core view
+> will be empty and only aggregate CPU usage is shown.
 
 ## Usage
 

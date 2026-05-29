@@ -430,17 +430,23 @@ func updateStats() tea.Cmd {
 func collectStats() SystemStats {
 	stats := SystemStats{}
 
-	// Get per-core CPU usage
-	perCoreCPU, _ := cpu.Percent(time.Second, true)
-	stats.CPUCores = perCoreCPU
+	// Get per-core CPU usage. On some platforms this can fail or return nothing
+	// (notably macOS binaries built without cgo, where gopsutil cannot read
+	// per-core stats). Don't silently swallow that: fall back to the aggregate
+	// reading so the overall CPU bar still works instead of showing 0%.
+	perCoreCPU, err := cpu.Percent(time.Second, true)
+	if err == nil && len(perCoreCPU) > 0 {
+		stats.CPUCores = perCoreCPU
 
-	// Calculate average CPU usage from per-core data
-	if len(perCoreCPU) > 0 {
+		// Calculate average CPU usage from per-core data
 		var sum float64
 		for _, val := range perCoreCPU {
 			sum += val
 		}
 		stats.CPUUsage = sum / float64(len(perCoreCPU))
+	} else if total, terr := cpu.Percent(time.Second, false); terr == nil && len(total) > 0 {
+		// Per-core data unavailable; show aggregate usage with no per-core bars.
+		stats.CPUUsage = total[0]
 	}
 
 	// Memory Usage
