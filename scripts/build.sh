@@ -55,7 +55,15 @@ case "${TARGET}" in
     ;;
   all)
     build_linux_windows
-    build_darwin
+    # darwin requires cgo and cannot be cross-compiled from Linux, so only build
+    # it as part of "all" when running on a macOS host. This keeps the default
+    # invocation (./scripts/build.sh) working on Linux CI/dev machines. The
+    # explicit "darwin" target still runs unconditionally so misuse fails loudly.
+    if [ "$(uname -s)" = "Darwin" ]; then
+      build_darwin
+    else
+      echo "Skipping macOS builds: not on a Darwin host (cgo can't be cross-compiled for darwin)."
+    fi
     ;;
   *)
     echo "Unknown target: ${TARGET}" >&2
