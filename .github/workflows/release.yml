@@ -19,9 +19,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.version.outputs.skip }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -77,35 +79,77 @@ jobs:
             echo "skip=${{ steps.check.outputs.skip }}" >> $GITHUB_OUTPUT
           fi
 
+  build:
+    needs: version
+    if: needs.version.outputs.skip == 'false'
+    strategy:
+      matrix:
+        include:
+          # Linux + Windows are pure-Go and cross-compiled on Linux.
+          - os: ubuntu-latest
+            target: linux-windows
+          # macOS must build on a macOS host with CGO enabled so gopsutil can
+          # read per-core CPU stats (host_processor_info). The macOS runner is
+          # arm64 and its clang/SDK can also target amd64, so a single runner
+          # produces both darwin binaries.
+          - os: macos-latest
+            target: darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set up Go
-        if: steps.version.outputs.skip == 'false'
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Build cross-platform binaries
-        if: steps.version.outputs.skip == 'false'
-        run: ./scripts/build.sh
+      - name: Build binaries (${{ matrix.target }})
+        run: ./scripts/build.sh ${{ matrix.target }}
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: sysmon-*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: [version, build]
+    if: needs.version.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: dist
 
       - name: Create Release
-        if: steps.version.outputs.skip == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: Release ${{ steps.version.outputs.version }}
+          tag_name: ${{ needs.version.outputs.version }}
+          name: Release ${{ needs.version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
           files: |
-            sysmon-linux-amd64
-            sysmon-linux-arm64
-            sysmon-darwin-amd64
-            sysmon-darwin-arm64
-            sysmon-windows-amd64.exe
-            sysmon-windows-arm64.exe
+            dist/sysmon-linux-amd64
+            dist/sysmon-linux-arm64
+            dist/sysmon-darwin-amd64
+            dist/sysmon-darwin-arm64
+            dist/sysmon-windows-amd64.exe
+            dist/sysmon-windows-arm64.exe
             README.md
             LICENSE
         env:

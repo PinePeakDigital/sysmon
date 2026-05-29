@@ -40,6 +40,11 @@ go mod tidy
 go build -o sysmon
 ```
 
+> **macOS note:** per-core CPU stats require cgo (gopsutil reads them via
+> `host_processor_info`). A native `go build` enables cgo by default, so this
+> works out of the box. If you build with `CGO_ENABLED=0`, the per-core view
+> will be empty and only aggregate CPU usage is shown.
+
 ## Usage
 
 ```bash
