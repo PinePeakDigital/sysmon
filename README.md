@@ -13,7 +13,7 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 ## Requirements
 
 - Go 1.21 or later
-- Linux system (for system stats)
+- Linux, macOS, or Windows (per-core CPU stats on macOS require a cgo-enabled build — see the [macOS note](#from-source) below)
 - nvidia-smi (optional, for NVIDIA GPU stats)
 - rocm-smi (optional, for AMD GPU stats)
 
