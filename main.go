@@ -204,7 +204,10 @@ func (m model) View() string {
 	memPercent := fmt.Sprintf("%5.1f%%", m.stats.MemoryUsage)
 
 	if m.stats.UnifiedMemory {
-		memBar := createBarWithText("Unified Memory", memPercent, m.stats.MemoryUsage, m.width, memStyle)
+		// Span the same total width the two side-by-side bars would occupy so
+		// the bar's right edge aligns with the CPU/GPU row above it.
+		unifiedWidth := barWidth*2 + spacingBetweenBars
+		memBar := createBarWithText("Unified Memory", memPercent, m.stats.MemoryUsage, unifiedWidth, memStyle)
 		s.WriteString(memBar + "\n")
 	} else {
 		memBar := createBarWithText("Memory", memPercent, m.stats.MemoryUsage, barWidth, memStyle)
@@ -529,7 +532,9 @@ func parseAppleGPUUsage(output string) float64 {
 
 	rest := output[idx+len(key):]
 	end := 0
-	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+	// ioreg reports this value as an integer today, but accept a decimal point
+	// too so a fractional reading wouldn't be silently truncated.
+	for end < len(rest) && ((rest[end] >= '0' && rest[end] <= '9') || rest[end] == '.') {
 		end++
 	}
 	if end == 0 {

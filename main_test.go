@@ -188,6 +188,11 @@ func TestParseAppleGPUUsage(t *testing.T) {
 			expected: 100,
 		},
 		{
+			name:     "fractional value is not truncated",
+			output:   `"Device Utilization %"=12.5,"foo"=1`,
+			expected: 12.5,
+		},
+		{
 			name:     "missing key",
 			output:   `{"Renderer Utilization %"=53}`,
 			expected: 0,
