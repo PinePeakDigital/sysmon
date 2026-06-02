@@ -99,9 +99,11 @@ func detectGPUVendor() {
 			return
 		}
 
-		// Try Apple Silicon's integrated GPU (macOS only). ioreg exposes GPU
-		// utilization via the IOAccelerator class without requiring sudo.
-		if runtime.GOOS == "darwin" {
+		// Try Apple Silicon's integrated GPU. ioreg exposes GPU utilization via
+		// the IOAccelerator class without requiring sudo. Gate on arm64: Intel
+		// Macs also expose IOAccelerator stats but have discrete/non-unified
+		// memory, so the Apple parser and unified-memory layout don't apply.
+		if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
 			cmd = exec.Command("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
 			if output, err := cmd.Output(); err == nil && strings.Contains(string(output), "Device Utilization %") {
 				detectedGPUVendor = gpuVendorApple
