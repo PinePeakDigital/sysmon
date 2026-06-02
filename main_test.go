@@ -166,6 +166,85 @@ func stripAnsiCodes(s string) string {
 	return result.String()
 }
 
+func TestParseAppleGPUUsage(t *testing.T) {
+	tests := []struct {
+		name     string
+		output   string
+		expected float64
+	}{
+		{
+			name:     "typical ioreg PerformanceStatistics line",
+			output:   `"PerformanceStatistics" = {"Tiler Utilization %"=5,"Renderer Utilization %"=53,"Device Utilization %"=61,"In use system memory"=221708288}`,
+			expected: 61,
+		},
+		{
+			name:     "zero utilization",
+			output:   `{"Device Utilization %"=0,"foo"=1}`,
+			expected: 0,
+		},
+		{
+			name:     "value at end of string",
+			output:   `"Device Utilization %"=100`,
+			expected: 100,
+		},
+		{
+			name:     "fractional value is not truncated",
+			output:   `"Device Utilization %"=12.5,"foo"=1`,
+			expected: 12.5,
+		},
+		{
+			name:     "missing key",
+			output:   `{"Renderer Utilization %"=53}`,
+			expected: 0,
+		},
+		{
+			name:     "empty output",
+			output:   "",
+			expected: 0,
+		},
+		{
+			name:     "no digits after key",
+			output:   `"Device Utilization %"=abc`,
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseAppleGPUUsage(tt.output)
+			if result != tt.expected {
+				t.Errorf("parseAppleGPUUsage(%q) = %v; expected %v", tt.output, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestViewUnifiedMemory(t *testing.T) {
+	m := model{
+		width:  80,
+		height: 24,
+		stats: SystemStats{
+			CPUUsage:      50.0,
+			GPUUsage:      25.0,
+			MemoryUsage:   60.0,
+			UnifiedMemory: true,
+			CPUCores:      []float64{10.0, 20.0, 30.0, 40.0},
+			Processes: []ProcessInfo{
+				{PID: 1234, CPU: 10.5, Memory: 5.2, Command: "/usr/bin/test"},
+			},
+		},
+	}
+
+	view := strings.ToLower(m.View())
+
+	if !strings.Contains(view, "unified memory") {
+		t.Error("expected unified-memory view to contain 'unified memory'")
+	}
+	if strings.Contains(view, "gpu memory") {
+		t.Error("expected unified-memory view to omit the separate 'gpu memory' bar")
+	}
+}
+
 func TestViewRendersCorrectly(t *testing.T) {
 	// Create a model with known dimensions and stats
 	m := model{

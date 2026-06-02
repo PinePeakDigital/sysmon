@@ -6,7 +6,12 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 
 - Real-time CPU usage (overall and per-core)
 - Memory usage statistics
-- GPU usage and memory (via nvidia-smi for NVIDIA or rocm-smi for AMD, if available)
+- GPU usage and memory:
+  - NVIDIA via `nvidia-smi`
+  - AMD via `rocm-smi`
+  - Apple Silicon via `ioreg` (no extra tools or `sudo` required)
+- Unified-memory systems (Apple Silicon) show a single "Unified Memory" bar
+  instead of a redundant Memory / GPU Memory split
 - Top processes by CPU usage
 - Clean, readable terminal interface
 
@@ -16,6 +21,7 @@ A terminal-based system monitor written in Go that displays CPU, memory, GPU, an
 - Linux, macOS, or Windows (per-core CPU stats on macOS require a cgo-enabled build — see the [macOS note](#from-source) below)
 - nvidia-smi (optional, for NVIDIA GPU stats)
 - rocm-smi (optional, for AMD GPU stats)
+- On Apple Silicon, GPU stats work out of the box via the built-in `ioreg` tool
 
 ## Installation
 
@@ -58,6 +64,6 @@ Press `q` or `Ctrl+C` to exit.
 The TUI displays:
 
 - CPU and GPU usage percentages
-- Memory and GPU memory percentages
+- Memory and GPU memory percentages (a single unified-memory bar on Apple Silicon)
 - Per-core CPU usage (4 cores per line)
 - Top 10 processes by CPU usage (PID, CPU%, MEM%, COMMAND)
