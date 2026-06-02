@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,10 @@ type SystemStats struct {
 	GPUMemory   float64
 	CPUCores    []float64
 	Processes   []ProcessInfo
+	// UnifiedMemory is true on systems where the CPU and GPU share a single
+	// memory pool (e.g. Apple Silicon). When set, the GPU has no dedicated
+	// VRAM and a separate "GPU Memory" reading would be redundant.
+	UnifiedMemory bool
 }
 
 type ProcessInfo struct {
@@ -57,6 +62,9 @@ const (
 	gpuVendorNone gpuVendor = iota
 	gpuVendorNVIDIA
 	gpuVendorAMD
+	// gpuVendorApple is the integrated GPU on Apple Silicon Macs, which
+	// shares a single unified memory pool with the CPU.
+	gpuVendorApple
 )
 
 // Cache for detected GPU vendor to avoid repeated command execution
@@ -89,6 +97,16 @@ func detectGPUVendor() {
 		if err := cmd.Run(); err == nil {
 			detectedGPUVendor = gpuVendorAMD
 			return
+		}
+
+		// Try Apple Silicon's integrated GPU (macOS only). ioreg exposes GPU
+		// utilization via the IOAccelerator class without requiring sudo.
+		if runtime.GOOS == "darwin" {
+			cmd = exec.Command("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
+			if output, err := cmd.Output(); err == nil && strings.Contains(string(output), "Device Utilization %") {
+				detectedGPUVendor = gpuVendorApple
+				return
+			}
 		}
 
 		// No GPU tools available
@@ -176,18 +194,25 @@ func (m model) View() string {
 
 	s.WriteString(cpuBar + "  " + gpuBar + "\n")
 
-	// Row 2: Memory | GPU Memory
+	// Row 2: Memory | GPU Memory.
+	// On unified-memory systems (Apple Silicon) the CPU and GPU share one
+	// memory pool, so we show a single full-width "Unified Memory" bar instead
+	// of a redundant CPU/GPU memory split.
 	memStyle := getColorStyle(m.stats.MemoryUsage).Underline(true)
-	memLabel := "Memory"
 	memPercent := fmt.Sprintf("%5.1f%%", m.stats.MemoryUsage)
-	memBar := createBarWithText(memLabel, memPercent, m.stats.MemoryUsage, barWidth, memStyle)
 
-	gpuMemStyle := getColorStyle(m.stats.GPUMemory).Underline(true)
-	gpuMemLabel := "GPU Memory"
-	gpuMemPercent := fmt.Sprintf("%4.1f%%", m.stats.GPUMemory)
-	gpuMemBar := createBarWithText(gpuMemLabel, gpuMemPercent, m.stats.GPUMemory, barWidth, gpuMemStyle)
+	if m.stats.UnifiedMemory {
+		memBar := createBarWithText("Unified Memory", memPercent, m.stats.MemoryUsage, m.width, memStyle)
+		s.WriteString(memBar + "\n")
+	} else {
+		memBar := createBarWithText("Memory", memPercent, m.stats.MemoryUsage, barWidth, memStyle)
 
-	s.WriteString(memBar + "  " + gpuMemBar + "\n")
+		gpuMemStyle := getColorStyle(m.stats.GPUMemory).Underline(true)
+		gpuMemPercent := fmt.Sprintf("%4.1f%%", m.stats.GPUMemory)
+		gpuMemBar := createBarWithText("GPU Memory", gpuMemPercent, m.stats.GPUMemory, barWidth, gpuMemStyle)
+
+		s.WriteString(memBar + "  " + gpuMemBar + "\n")
+	}
 
 	s.WriteString("\n")
 
@@ -458,6 +483,9 @@ func collectStats() SystemStats {
 	// GPU stats
 	stats.GPUUsage = getGPUUsage()
 	stats.GPUMemory = getGPUMemory()
+	// On unified-memory systems (Apple Silicon) the GPU shares the system
+	// memory pool, so there is no separate VRAM figure to report.
+	stats.UnifiedMemory = detectedGPUVendor == gpuVendorApple
 
 	// Process list
 	stats.Processes = getTopProcesses()
@@ -471,9 +499,46 @@ func getGPUUsage() float64 {
 		return getGPUUsageNVIDIA()
 	case gpuVendorAMD:
 		return getGPUUsageAMD()
+	case gpuVendorApple:
+		return getGPUUsageApple()
 	default:
 		return 0.0
 	}
+}
+
+func getGPUUsageApple() float64 {
+	cmd := exec.Command("ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0.0
+	}
+	return parseAppleGPUUsage(string(output))
+}
+
+// parseAppleGPUUsage extracts the "Device Utilization %" value from ioreg
+// IOAccelerator output. This is the same figure Activity Monitor reports as
+// GPU usage. Returns 0.0 if the value can't be found or parsed.
+func parseAppleGPUUsage(output string) float64 {
+	const key = `"Device Utilization %"=`
+	idx := strings.Index(output, key)
+	if idx == -1 {
+		return 0.0
+	}
+
+	rest := output[idx+len(key):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0.0
+	}
+
+	usage, err := strconv.ParseFloat(rest[:end], 64)
+	if err != nil {
+		return 0.0
+	}
+	return usage
 }
 
 func getGPUUsageNVIDIA() float64 {
