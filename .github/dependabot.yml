@@ -6,5 +6,29 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: ci
+    groups:
+      actions-all:
+        applies-to: version-updates
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      gomod-all:
+        applies-to: version-updates
+        patterns: ["*"]
+      gomod-security:
+        applies-to: security-updates
+        patterns: ["*"]
